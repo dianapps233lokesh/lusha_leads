@@ -22,10 +22,14 @@ def export_to_csv(data: dict, file_name: str = "founders.csv"):
         country = location.get("country")
 
         # Extract emails
-        emails = ", ".join([e.get("address") for e in contact.get("emails", []) if e.get("address")])
+        emails = ", ".join(
+            [e.get("address") for e in contact.get("emails", []) if e.get("address")]
+        )
 
         # Extract phones
-        phones = ", ".join([p.get("number") for p in contact.get("phones", []) if p.get("number")])
+        phones = ", ".join(
+            [p.get("number") for p in contact.get("phones", []) if p.get("number")]
+        )
 
         # Get company details from unique_companies using company_id
         company = companies_data.get(str(company_id), {})
@@ -34,7 +38,9 @@ def export_to_csv(data: dict, file_name: str = "founders.csv"):
         company_description = company.get("description")
         company_size_min = company.get("company_size", {}).get("min")
         company_size_max = company.get("company_size", {}).get("max")
-        company_industry = company.get("industry", {}).get("primary_industry", {}).get("key")
+        company_industry = (
+            company.get("industry", {}).get("primary_industry", {}).get("key")
+        )
 
         row = {
             "first_name": first_name,

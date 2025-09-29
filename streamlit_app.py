@@ -1,12 +1,13 @@
-import streamlit as st
 import pandas as pd
 import requests
+import streamlit as st
 
 # Set page configuration for a modern look
 st.set_page_config(page_title="Lusha Search", layout="wide")
 
 # Custom CSS for a professional and attractive UI
-st.markdown("""
+st.markdown(
+    """
 <style>
     /* Main app background */
     .stApp {
@@ -58,28 +59,46 @@ st.markdown("""
         background-color: #007B9A;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # App header
 st.title("Lusha Founder & CTO Search")
-st.markdown("<h3 style='text-align: center; color: #E0E0E0;'>Enter a company name to find key contacts.</h3>", unsafe_allow_html=True)
+st.markdown(
+    "<h3 style='text-align: center; color: #E0E0E0;'>Enter a company name to find key contacts.</h3>",
+    unsafe_allow_html=True,
+)
 st.markdown("---")
 
 # Search input and button
-query = st.text_input("", placeholder="Enter company name...", label_visibility="collapsed")
+with st.form("search_form", clear_on_submit=False):
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        query = st.text_input(
+            "", placeholder="Enter company name...", label_visibility="collapsed"
+        )
+    with col2:
+        search_button = st.form_submit_button("Search")
 
-if st.button("Search"):
+if search_button:
     if query:
         # Display a spinner while fetching data
         with st.spinner("Searching..."):
             try:
                 # Make a request to the FastAPI backend
-                response = requests.post("http://127.0.0.1:8000/api/search-founders", json={"search_text": query})
+                response = requests.post(
+                    "http://127.0.0.1:8000/api/search-founders",
+                    json={"search_text": query},
+                )
                 response.raise_for_status()  # Raise an exception for bad status codes
                 data = response.json()
 
                 if data:
                     contacts_list = data.get("contacts", {}).get("results", [])
+                    company_details = data.get("contacts", {}).get(
+                        "unique_companies", {}
+                    )
 
                     if not contacts_list:
                         st.warning("No contacts found in the API response.")
@@ -88,13 +107,20 @@ if st.button("Search"):
                         for contact in contacts_list:
                             job_title_info = contact.get("job_title", {})
                             title = job_title_info.get("title", "")
+                            # company_id = contact.get("company_id", None)
 
                             # Filter for founders and CTOs by checking for keywords in the title
-                            if "founder" in title.lower() or "cto" in title.lower() or "chief technology officer" in title.lower():
+                            if (
+                                "founder" in title.lower()
+                                or "cto" in title.lower()
+                                or "chief technology officer" in title.lower()
+                            ):
                                 full_name = contact.get("name", {}).get("full", "N/A")
-                                
+
                                 location_info = contact.get("location", {})
-                                location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(", ")
+                                location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(
+                                    ", "
+                                )
 
                                 phones = contact.get("phones", [])
                                 processed_phones = []
@@ -122,23 +148,47 @@ if st.button("Search"):
                                 else:
                                     email_addresses = ", ".join(processed_emails)
 
-                                processed_data.append({
-                                    "Company": query,  # Use the search query as the company name
-                                    "Website": "",  # Not available in the contact response
-                                    "Industry": "",  # Not available in the contact response
-                                    "Contact (Founder/CTO)": f"{full_name} ({title})",
-                                    "LinkedIn": contact.get("social_link", ""),
-                                    "Phone": phone_numbers,
-                                    "Email": email_addresses,
-                                    "Location": location,
-                                })
+                                # Get company details from the lookup
+                                contact_company_id = contact.get("company_id")
+                                details = company_details.get(
+                                    str(contact_company_id), {}
+                                )
+                                industry = details.get("industry", {}).get(
+                                    "primary_industry", {}
+                                )
+
+                                processed_data.append(
+                                    {
+                                        "Company": details.get(
+                                            "name",
+                                            "Not found",
+                                        ),  # Use company name from lookup, fallback to query
+                                        "Website": details.get("homepage_url", ""),
+                                        "Industry": industry.get("key", ""),
+                                        "Sub-Industry": industry.get(
+                                            "sub_industry", {}
+                                        ).get("key", ""),
+                                        "Name (Founder/CTO)": f"{full_name} ({title})",
+                                        "Founder LinkedIn": contact.get(
+                                            "social_link", ""
+                                        ),
+                                        "Company LinkedIn": details.get(
+                                            "social", {}
+                                        ).get("linkedin", ""),
+                                        "Phone": phone_numbers,
+                                        "Email": email_addresses,
+                                        "Location": location,
+                                    }
+                                )
 
                         if processed_data:
-                            st.success(f"Found {len(processed_data)} matching contacts.")
+                            st.success(
+                                f"Found {len(processed_data)} matching contacts."
+                            )
                             df = pd.DataFrame(processed_data)
                             st.dataframe(df)
 
-                            csv = df.to_csv(index=False).encode('utf-8')
+                            csv = df.to_csv(index=False).encode("utf-8")
                             st.download_button(
                                 label="Export to CSV",
                                 data=csv,
