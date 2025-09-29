@@ -1,27 +1,80 @@
+import streamlit as st
 import pandas as pd
 import requests
-import streamlit as st
 
-# Set the title of the Streamlit app
+# Set page configuration for a modern look
+st.set_page_config(page_title="Lusha Search", layout="wide")
+
+# Custom CSS for a professional and attractive UI
+st.markdown("""
+<style>
+    /* Main app background */
+    .stApp {
+        background: linear-gradient(to right, #283048, #859398);
+        color: #FFFFFF;
+    }
+    /* Main content area */
+    .main .block-container {
+        background-color: rgba(255, 255, 255, 0.1);
+        padding: 2rem;
+        border-radius: 10px;
+    }
+    /* Title styling */
+    h1 {
+        color: #FFFFFF;
+        text-align: center;
+        font-family: 'Arial', sans-serif;
+    }
+    /* Input field styling */
+    .stTextInput > div > div > input {
+        background-color: rgba(255, 255, 255, 0.2);
+        color: #FFFFFF;
+        border-radius: 5px;
+    }
+    /* Button styling */
+    .stButton > button {
+        background-color: #4CAF50;
+        color: white;
+        border-radius: 5px;
+        padding: 0.5rem 1rem;
+        border: none;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    .stButton > button:hover {
+        background-color: #45a049;
+    }
+    /* Dataframe styling */
+    .stDataFrame {
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+    }
+    /* Download button styling */
+    .stDownloadButton > button {
+        background-color: #008CBA;
+    }
+    .stDownloadButton > button:hover {
+        background-color: #007B9A;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# App header
 st.title("Lusha Founder & CTO Search")
+st.markdown("<h3 style='text-align: center; color: #E0E0E0;'>Enter a company name to find key contacts.</h3>", unsafe_allow_html=True)
+st.markdown("---")
 
-# Create a text input field for the search query
-query = st.text_input("Enter company name to search for founders and CTOs:")
+# Search input and button
+query = st.text_input("", placeholder="Enter company name...", label_visibility="collapsed")
 
-# Create a search button
 if st.button("Search"):
     if query:
         # Display a spinner while fetching data
         with st.spinner("Searching..."):
             try:
                 # Make a request to the FastAPI backend
-                response = requests.post(
-                    "http://127.0.0.1:8000/api/search-founders",
-                    json={"search_text": query},
-                )
-                print(
-                    f"api response for the streamlit ui app------------{response.json()}"
-                )
+                response = requests.post("http://127.0.0.1:8000/api/search-founders", json={"search_text": query})
                 response.raise_for_status()  # Raise an exception for bad status codes
                 data = response.json()
 
@@ -29,7 +82,7 @@ if st.button("Search"):
                     contacts_list = data.get("contacts", {}).get("results", [])
 
                     if not contacts_list:
-                        st.write("No contacts found in the API response.")
+                        st.warning("No contacts found in the API response.")
                     else:
                         processed_data = []
                         for contact in contacts_list:
@@ -44,10 +97,30 @@ if st.button("Search"):
                                 location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(", ")
 
                                 phones = contact.get("phones", [])
-                                phone_numbers = ", ".join([p.get("number", "0000000000") for p in phones]) if phones else "0000000000"
+                                processed_phones = []
+                                for p in phones:
+                                    number = p.get("number")
+                                    if number and number.endswith("..."):
+                                        processed_phones.append("0000000000")
+                                    elif number:
+                                        processed_phones.append(number)
+                                if not processed_phones:
+                                    phone_numbers = "0000000000"
+                                else:
+                                    phone_numbers = ", ".join(processed_phones)
 
                                 emails = contact.get("emails", [])
-                                email_addresses = ", ".join([e.get("address", "test@company.com") for e in emails]) if emails else "test@company.com"
+                                processed_emails = []
+                                for e in emails:
+                                    address = e.get("address")
+                                    if address and address.startswith("..."):
+                                        processed_emails.append("test@company.com")
+                                    elif address:
+                                        processed_emails.append(address)
+                                if not processed_emails:
+                                    email_addresses = "test@company.com"
+                                else:
+                                    email_addresses = ", ".join(processed_emails)
 
                                 processed_data.append({
                                     "Company": query,  # Use the search query as the company name
@@ -61,6 +134,7 @@ if st.button("Search"):
                                 })
 
                         if processed_data:
+                            st.success(f"Found {len(processed_data)} matching contacts.")
                             df = pd.DataFrame(processed_data)
                             st.dataframe(df)
 
@@ -72,10 +146,10 @@ if st.button("Search"):
                                 mime="text/csv",
                             )
                         else:
-                            st.write("No Founders or CTOs found for this company.")
+                            st.info("No Founders or CTOs found for this company.")
                 else:
-                    st.write("No results found.")
+                    st.error("No results found or an error occurred.")
             except requests.exceptions.RequestException as e:
-                st.error(f"An error occurred: {e}")
+                st.error(f"An error occurred while connecting to the API: {e}")
     else:
-        st.write("Please enter a search query.")
+        st.warning("Please enter a search query.")
