@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+#founders csv file
+founders.csv
+.text
+
 # Distribution / packaging
 .Python
 build/
