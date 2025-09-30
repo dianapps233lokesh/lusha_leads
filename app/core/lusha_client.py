@@ -29,7 +29,7 @@ class LushaApiClient:
             "x-xsrf-token": settings.LUSHA_XSRF_TOKEN,
         }
 
-    def get_prospecting_data(self, search_text: str):
+    def get_prospecting_data(self, search_text: str, page: int = 0):
         url = f"{self.base_url}/prospecting-full"
         session_id = str(uuid.uuid4())
 
@@ -41,7 +41,7 @@ class LushaApiClient:
                 "excludePartialProfiles": False,
             },
             "display": "contacts",
-            "pages": {"page": 0, "pageSize": 25},
+            "pages": {"page": page, "pageSize": 100},
             "sessionId": session_id,
             "searchTrigger": "NewFilter",
             "savedSearchId": 0,
@@ -63,6 +63,39 @@ class LushaApiClient:
             # In a real app, you'd want to handle this more gracefully
             # For example, by raising a custom exception
             return None
+
+    def get_all_prospecting_data(self, search_text: str):
+        all_contacts = []
+        all_companies = {}
+        page = 0
+        while True:
+            data = self.get_prospecting_data(search_text, page)
+            if not data:
+                break
+
+            contacts_data = data.get("contacts", {})
+            results = contacts_data.get("results", [])
+            unique_companies = contacts_data.get("unique_companies", {})
+
+            if not results:
+                break
+
+            all_contacts.extend(results)
+            all_companies.update(unique_companies)
+
+            if len(results) < 100:
+                break
+
+            page += 1
+            import time
+            time.sleep(1)
+
+        return {
+            "contacts": {
+                "results": all_contacts,
+                "unique_companies": all_companies
+            }
+        }
 
 
 # You can create a single instance to be used across the application

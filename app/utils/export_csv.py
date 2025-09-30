@@ -23,12 +23,12 @@ def export_to_csv(data: dict, file_name: str = "founders.csv"):
 
         # Extract emails
         emails = ", ".join(
-            [e.get("address") for e in contact.get("emails", []) if e.get("address")]
+            [e.get("address") for e in contact.get("emails", []) if e.get("address")],
         )
 
         # Extract phones
         phones = ", ".join(
-            [p.get("number") for p in contact.get("phones", []) if p.get("number")]
+            [p.get("number") for p in contact.get("phones", []) if p.get("number")],
         )
 
         # Get company details from unique_companies using company_id
