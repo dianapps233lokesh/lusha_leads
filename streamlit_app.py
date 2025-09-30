@@ -1,6 +1,47 @@
+import os
 import pandas as pd
 import requests
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- Authentication ---
+def check_password():
+    """Returns `True` if the user had a correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if (st.session_state["username"] == os.getenv("STREAMLIT_USERNAME")) and (
+            st.session_state["password"] == os.getenv("STREAMLIT_PASSWORD")
+        ):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # don't store password
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # First run, show input for password.
+        st.text_input("Username", key="username")
+        st.text_input(
+            "Password", type="password", on_change=password_entered, key="password"
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        # Password not correct, show input + error.
+        st.text_input("Username", key="username")
+        st.text_input(
+            "Password", type="password", on_change=password_entered, key="password"
+        )
+        st.error("😕 User not known or password incorrect")
+        return False
+    else:
+        # Password correct.
+        return True
+
+if not check_password():
+    st.stop()  # Do not continue if check_password is not True.
 
 # Set page configuration for a modern look
 st.set_page_config(page_title="Lusha Search", layout="wide")
@@ -168,32 +209,45 @@ if search_button:
                                 else:
                                     email_addresses = ", ".join(processed_emails)
 
-                                if (
-                                    email_addresses == "test@company.com"
-                                    and full_name != "N/A"
-                                    and company_name != "Not found"
-                                ):
-                                    try:
-                                        print(
-                                            f"full name is {full_name} and company name is {company_name}"
-                                        )
-                                        serp_response = requests.post(
-                                            "http://127.0.0.1:8000/serp/get_founder_email",
-                                            json={
-                                                "founder_name": full_name,
-                                                "company_name": company_name,
-                                            },
-                                        )
-                                        serp_response.raise_for_status()
-                                        serp_data = serp_response.json()
-                                        print(
-                                            f"response of serp api is ------------>>>>>>>>{serp_data}"
-                                        )
-                                        if serp_data and serp_data.get("email"):
-                                            email_addresses = serp_data.get("email")
-                                    except requests.exceptions.RequestException:
-                                        # Silently fail and keep test@company.com
-                                        pass
+                                # if (
+                                #     email_addresses == "test@company.com"
+                                #     and full_name != "N/A"
+                                #     and company_name != "Not found"
+                                # ):
+                                #     # try:
+                                #     print(
+                                #         f"full name is {full_name} and company name is {company_name}"
+                                #     )
+                                #     serp_response = requests.post(
+                                #         "http://127.0.0.1:8000/serp/get_founder_email",
+                                #         json={
+                                #             "founder_name": full_name,
+                                #             "company_name": company_name,
+                                #         },
+                                #     )
+                                #     serp_response.raise_for_status()
+                                #     serp_data = serp_response.json()
+                                #     print(
+                                #         f"response of serp api is ------------>>>>>>>>{serp_data}"
+                                #     )
+                                #     if serp_data and serp_data.get("email"):
+                                #         email_addresses = serp_data.get("email")
+                                # except requests.exceptions.RequestException:
+                                #     # Silently fail and keep test@company.com
+                                #     pass
+
+                                emails = contact.get("emails", [])
+                                processed_emails = []
+                                for e in emails:
+                                    address = e.get("address")
+                                    if address and address.startswith("..."):
+                                        processed_emails.append("test@company.com")
+                                    elif address:
+                                        processed_emails.append(address)
+                                if not processed_emails:
+                                    email_addresses = "test@company.com"
+                                else:
+                                    email_addresses = ", ".join(processed_emails)
 
                                 industry = details.get("industry", {}).get(
                                     "primary_industry",
