@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     LUSHA_CSRF_TOKEN: str
     LUSHA_XSRF_TOKEN: str
     LUSHA_COOKIE: str
+    SERP_API_KEY: str
 
     class Config:
         env_file = ".env.dev"

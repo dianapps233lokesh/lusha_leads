@@ -103,7 +103,7 @@ if search_button:
                 )
                 response.raise_for_status()  # Raise an exception for bad status codes
                 data = response.json()
-                print(f"data is ------------->>>>>>{data}")
+                # print(f"data is ------------->>>>>>{data}")
 
                 if data:
                     contacts_list = data.get("contacts", {}).get("results", [])
@@ -128,6 +128,14 @@ if search_button:
                                 or "chief technology officer" in title.lower()
                             ):
                                 full_name = contact.get("name", {}).get("full", "N/A")
+
+                                # Get company details from the lookup
+                                contact_company_id = contact.get("company_id")
+                                details = company_details.get(
+                                    str(contact_company_id),
+                                    {},
+                                )
+                                company_name = details.get("name", "Not found")
 
                                 location_info = contact.get("location", {})
                                 location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(
@@ -160,12 +168,33 @@ if search_button:
                                 else:
                                     email_addresses = ", ".join(processed_emails)
 
-                                # Get company details from the lookup
-                                contact_company_id = contact.get("company_id")
-                                details = company_details.get(
-                                    str(contact_company_id),
-                                    {},
-                                )
+                                if (
+                                    email_addresses == "test@company.com"
+                                    and full_name != "N/A"
+                                    and company_name != "Not found"
+                                ):
+                                    try:
+                                        print(
+                                            f"full name is {full_name} and company name is {company_name}"
+                                        )
+                                        serp_response = requests.post(
+                                            "http://127.0.0.1:8000/serp/get_founder_email",
+                                            json={
+                                                "founder_name": full_name,
+                                                "company_name": company_name,
+                                            },
+                                        )
+                                        serp_response.raise_for_status()
+                                        serp_data = serp_response.json()
+                                        print(
+                                            f"response of serp api is ------------>>>>>>>>{serp_data}"
+                                        )
+                                        if serp_data and serp_data.get("email"):
+                                            email_addresses = serp_data.get("email")
+                                    except requests.exceptions.RequestException:
+                                        # Silently fail and keep test@company.com
+                                        pass
+
                                 industry = details.get("industry", {}).get(
                                     "primary_industry",
                                     {},
