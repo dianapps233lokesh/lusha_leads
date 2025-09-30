@@ -73,11 +73,11 @@ st.markdown("---")
 
 # Search input and button
 with st.form("search_form", clear_on_submit=False):
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([10, 1])
     with col1:
         query = st.text_input(
             "",
-            placeholder="Enter company name...",
+            placeholder="Enter your query...",
             label_visibility="collapsed",
         )
     with col2:
@@ -100,11 +100,10 @@ if search_button:
                 response = requests.post(
                     "http://127.0.0.1:8000/api/search-founders",
                     json={"search_text": query},
-                    timeout=50,
                 )
                 response.raise_for_status()  # Raise an exception for bad status codes
                 data = response.json()
-                # print(f"data is ------------->>>>>>{data}")
+                print(f"data is ------------->>>>>>{data}")
 
                 if data:
                     contacts_list = data.get("contacts", {}).get("results", [])
@@ -217,16 +216,29 @@ if st.session_state.data:
     end_index = start_index + page_size
 
     df = pd.DataFrame(processed_data[start_index:end_index])
+    df.index = range(start_index + 1, start_index + len(df) + 1)
     st.dataframe(df)
 
     # Pagination controls
+    def go_to_previous_page():
+        st.session_state.page_number -= 1
+
+    def go_to_next_page():
+        st.session_state.page_number += 1
+
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        if st.button("Previous") and st.session_state.page_number > 0:
-            st.session_state.page_number -= 1
+        st.button(
+            "Previous",
+            on_click=go_to_previous_page,
+            disabled=(st.session_state.page_number == 0),
+        )
     with col3:
-        if st.button("Next") and end_index < len(processed_data):
-            st.session_state.page_number += 1
+        st.button(
+            "Next",
+            on_click=go_to_next_page,
+            disabled=(end_index >= len(processed_data)),
+        )
 
     csv = pd.DataFrame(processed_data).to_csv(index=False).encode("utf-8")
     st.download_button(
@@ -235,6 +247,5 @@ if st.session_state.data:
         file_name=f"{query}_founders_ctos.csv",
         mime="text/csv",
     )
-else:
-    if search_button and query:
-        st.info("No Founders or CTOs found for this company.")
+elif search_button and query:
+    st.info("No Founders or CTOs found for this company.")

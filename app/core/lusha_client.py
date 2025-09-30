@@ -1,7 +1,9 @@
+import time
 import uuid
 
 import requests
 
+from app.core import MAX_ROWS_PER_PAGE
 from app.core.config import settings
 
 
@@ -83,18 +85,15 @@ class LushaApiClient:
             all_contacts.extend(results)
             all_companies.update(unique_companies)
 
-            if len(results) < 100:
+            if len(results) < MAX_ROWS_PER_PAGE:
                 break
 
             page += 1
-            import time
+
             time.sleep(1)
 
         return {
-            "contacts": {
-                "results": all_contacts,
-                "unique_companies": all_companies
-            }
+            "contacts": {"results": all_contacts, "unique_companies": all_companies},
         }
 
 
