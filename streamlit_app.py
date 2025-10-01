@@ -252,6 +252,8 @@ if st.session_state.data:
     )
 
     df = pd.DataFrame(st.session_state.data)
+    start_index = st.session_state.page_number * 25 + 1
+    df.index = range(start_index, start_index + len(df))
     st.dataframe(df)
 
     # Pagination controls
