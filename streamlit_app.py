@@ -5,9 +5,11 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from app.services.lusha_service import lusha_service
+
 # from app.services.serp_api_service import get_founder_email
 
 load_dotenv()
+
 
 # --- Authentication ---
 def check_password():
@@ -15,8 +17,9 @@ def check_password():
 
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-        if (st.session_state["username"] == os.getenv("STREAMLIT_USERNAME")) and (
-            st.session_state["password"] == os.getenv("STREAMLIT_PASSWORD")
+        if (
+            st.session_state["username"] == "admin"
+            and st.session_state["password"] == "admin@123"
         ):
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # don't store password
@@ -41,6 +44,7 @@ def check_password():
         return False
     # Password correct.
     return True
+
 
 if not check_password():
     st.stop()  # Do not continue if check_password is not True.
