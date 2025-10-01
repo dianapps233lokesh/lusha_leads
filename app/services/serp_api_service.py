@@ -4,9 +4,7 @@ from app.core.config import settings
 
 
 def get_founder_email(company_name: str, founder_name: str):
-    """
-    Searches for the email of a founder using the SERP API.
-    """
+    """Searches for the email of a founder using the SERP API."""
     params = {
         "api_key": settings.SERP_API_KEY,
         "engine": "google",

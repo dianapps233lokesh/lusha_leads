@@ -1,8 +1,11 @@
 import os
+
 import pandas as pd
-import requests
 import streamlit as st
 from dotenv import load_dotenv
+
+from app.services.lusha_service import lusha_service
+# from app.services.serp_api_service import get_founder_email
 
 load_dotenv()
 
@@ -28,7 +31,7 @@ def check_password():
             "Password", type="password", on_change=password_entered, key="password"
         )
         return False
-    elif not st.session_state["password_correct"]:
+    if not st.session_state["password_correct"]:
         # Password not correct, show input + error.
         st.text_input("Username", key="username")
         st.text_input(
@@ -36,9 +39,8 @@ def check_password():
         )
         st.error("😕 User not known or password incorrect")
         return False
-    else:
-        # Password correct.
-        return True
+    # Password correct.
+    return True
 
 if not check_password():
     st.stop()  # Do not continue if check_password is not True.
@@ -138,12 +140,7 @@ if search_button:
         with st.spinner("Searching..."):
             try:
                 # Make a request to the FastAPI backend
-                response = requests.post(
-                    "http://127.0.0.1:8000/api/search-founders",
-                    json={"search_text": query},
-                )
-                response.raise_for_status()  # Raise an exception for bad status codes
-                data = response.json()
+                data = lusha_service.get_company_details(query)
                 # print(f"data is ------------->>>>>>{data}")
 
                 if data:
@@ -218,15 +215,10 @@ if search_button:
                                 #     print(
                                 #         f"full name is {full_name} and company name is {company_name}"
                                 #     )
-                                #     serp_response = requests.post(
-                                #         "http://127.0.0.1:8000/serp/get_founder_email",
-                                #         json={
-                                #             "founder_name": full_name,
-                                #             "company_name": company_name,
-                                #         },
+                                #     serp_data = get_founder_email(
+                                #         company_name,
+                                #         full_name,
                                 #     )
-                                #     serp_response.raise_for_status()
-                                #     serp_data = serp_response.json()
                                 #     print(
                                 #         f"response of serp api is ------------>>>>>>>>{serp_data}"
                                 #     )
@@ -283,8 +275,8 @@ if search_button:
                         st.session_state.data = processed_data
                 else:
                     st.error("No results found or an error occurred.")
-            except requests.exceptions.RequestException as e:
-                st.error(f"An error occurred while connecting to the API: {e}")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
     else:
         st.warning("Please enter a search query.")
 
