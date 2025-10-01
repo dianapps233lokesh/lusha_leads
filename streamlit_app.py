@@ -145,6 +145,7 @@ if search_button:
             try:
                 # Make a request to the FastAPI backend
                 data = lusha_service.get_company_details(query)
+                st.write(data)
 
                 if data:
                     contacts_list = data.get("contacts", {}).get("results", [])
