@@ -6,8 +6,6 @@ from dotenv import load_dotenv
 
 from app.services.lusha_service import lusha_service
 
-# from app.services.serp_api_service import get_founder_email
-
 load_dotenv()
 
 
@@ -52,7 +50,6 @@ if not check_password():
 # Set page configuration for a modern look
 st.set_page_config(page_title="Lusha Search", layout="wide")
 
-# Custom CSS for a professional and attractive UI
 st.markdown(
     """
 <style>
@@ -112,199 +109,152 @@ st.markdown(
 
 # App header
 st.title("DianApps Lead Search")
-# st.markdown(
-#     "<h3 style='text-align: center; color: #E0E0E0;'>Enter a company name to find key contacts.</h3>",
-#     unsafe_allow_html=True,
-# )
 st.markdown("---")
 
-# Search input and button
+# --- Session State Initialization ---
+if "page_number" not in st.session_state:
+    st.session_state.page_number = 0
+if "data" not in st.session_state:
+    st.session_state.data = []
+if "query" not in st.session_state:
+    st.session_state.query = ""
+if "total_hits" not in st.session_state:
+    st.session_state.total_hits = 0
+
+
+# --- Data Fetching and Processing ---
+def fetch_and_process_data(query, page):
+    # print(f"--- Fetching data for query: '{query}', page: {page} ---")
+    with st.spinner("Searching..."):
+        try:
+            data = lusha_service.get_company_details(query, page)
+
+            if data and "error" in data:
+                st.error(f"An API error occurred: {data['error']}")
+                st.session_state.data = []
+                return
+
+            contacts_data = data.get("contacts", {})
+            contacts_list = contacts_data.get("results", [])
+            company_details = contacts_data.get("unique_companies", {})
+
+            total_hits = contacts_data.get("total", 0)
+            # print(f"--- API returned total_hits: {total_hits} ---")
+            st.session_state.total_hits = total_hits
+
+            if not contacts_list:
+                st.warning("No contacts found for the current page.")
+                st.session_state.data = []
+                return
+
+            processed_data = []
+            for contact in contacts_list:
+                job_title_info = contact.get("job_title", {})
+                title = job_title_info.get("title", "")
+
+                if (
+                    "founder" in title.lower()
+                    or "cto" in title.lower()
+                    or "chief technology officer" in title.lower()
+                ):
+                    full_name = contact.get("name", {}).get("full", "N/A")
+                    contact_company_id = contact.get("company_id")
+                    details = company_details.get(str(contact_company_id), {})
+                    company_name = details.get("name", "Not found")
+                    location_info = contact.get("location", {})
+                    location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(
+                        ", "
+                    )
+
+                    phones = [
+                        p.get("number", "0000000000")
+                        for p in contact.get("phones", [])
+                        if p.get("number")
+                    ]
+                    phone_numbers = ", ".join(phones) if phones else "0000000000"
+
+                    emails = [
+                        e.get("address", "test@company.com")
+                        for e in contact.get("emails", [])
+                        if e.get("address")
+                    ]
+                    email_addresses = (
+                        ", ".join(emails) if emails else "test@company.com"
+                    )
+
+                    industry = details.get("industry", {}).get("primary_industry", {})
+
+                    processed_data.append(
+                        {
+                            "Company": company_name,
+                            "Website": details.get("homepage_url", ""),
+                            "Industry": industry.get("key", ""),
+                            "Sub-Industry": industry.get("sub_industry", {}).get(
+                                "key", ""
+                            ),
+                            "Name (Founder/CTO)": f"{full_name} ({title})",
+                            "Founder LinkedIn": contact.get("social_link", ""),
+                            "Company LinkedIn": details.get("social", {}).get(
+                                "linkedin", ""
+                            ),
+                            "Phone": phone_numbers,
+                            "Email": email_addresses,
+                            "Location": location,
+                        }
+                    )
+            st.session_state.data = processed_data
+
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+            st.session_state.data = []
+
+
+# --- Search Form ---
 with st.form("search_form", clear_on_submit=False):
     col1, col2 = st.columns([10, 1])
     with col1:
-        query = st.text_input(
+        query_input = st.text_input(
             "",
             placeholder="Enter your query...",
             label_visibility="collapsed",
+            key="query_input",
         )
     with col2:
         search_button = st.form_submit_button("Search")
 
-if "page_number" not in st.session_state:
+if search_button and query_input:
+    st.session_state.query = query_input
     st.session_state.page_number = 0
+    fetch_and_process_data(st.session_state.query, st.session_state.page_number)
 
-if "data" not in st.session_state:
-    st.session_state.data = []
 
-if search_button:
-    st.session_state.page_number = 0  # Reset page number on new search
-    st.session_state.data = []  # Clear previous data
-    if query:
-        # Display a spinner while fetching data
-        with st.spinner("Searching..."):
-            try:
-                # Make a request to the FastAPI backend
-                data = lusha_service.get_company_details(query)
-                st.write(data)
+# --- Pagination and Display ---
+def go_to_previous_page():
+    # print("--- In go_to_previous_page ---")
+    if st.session_state.page_number > 0:
+        st.session_state.page_number -= 1
+        # print(f"Page number decremented to: {st.session_state.page_number}")
+        fetch_and_process_data(st.session_state.query, st.session_state.page_number)
+    # print("--- Exiting go_to_previous_page ---")
 
-                if data:
-                    contacts_list = data.get("contacts", {}).get("results", [])
-                    company_details = data.get("contacts", {}).get(
-                        "unique_companies",
-                        {},
-                    )
 
-                    if not contacts_list:
-                        st.warning("No contacts found in the API response.")
-                    else:
-                        processed_data = []
-                        for contact in contacts_list:
-                            job_title_info = contact.get("job_title", {})
-                            title = job_title_info.get("title", "")
-                            # company_id = contact.get("company_id", None)
+def go_to_next_page():
+    # print("--- In go_to_next_page ---")
+    st.session_state.page_number += 1
+    # print(f"Page number incremented to: {st.session_state.page_number}")
+    fetch_and_process_data(st.session_state.query, st.session_state.page_number)
+    # print("--- Exiting go_to_next_page ---")
 
-                            # Filter for founders and CTOs by checking for keywords in the title
-                            if (
-                                "founder" in title.lower()
-                                or "cto" in title.lower()
-                                or "chief technology officer" in title.lower()
-                            ):
-                                full_name = contact.get("name", {}).get("full", "N/A")
-
-                                # Get company details from the lookup
-                                contact_company_id = contact.get("company_id")
-                                details = company_details.get(
-                                    str(contact_company_id),
-                                    {},
-                                )
-                                company_name = details.get("name", "Not found")
-
-                                location_info = contact.get("location", {})
-                                location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(
-                                    ", ",
-                                )
-
-                                phones = contact.get("phones", [])
-                                processed_phones = []
-                                for p in phones:
-                                    number = p.get("number")
-                                    if number and number.endswith("..."):
-                                        processed_phones.append("0000000000")
-                                    elif number:
-                                        processed_phones.append(number)
-                                if not processed_phones:
-                                    phone_numbers = "0000000000"
-                                else:
-                                    phone_numbers = ", ".join(processed_phones)
-
-                                emails = contact.get("emails", [])
-                                processed_emails = []
-                                for e in emails:
-                                    address = e.get("address")
-                                    if address and address.startswith("..."):
-                                        processed_emails.append("test@company.com")
-                                    elif address:
-                                        processed_emails.append(address)
-                                if not processed_emails:
-                                    email_addresses = "test@company.com"
-                                else:
-                                    email_addresses = ", ".join(processed_emails)
-
-                                # if (
-                                #     email_addresses == "test@company.com"
-                                #     and full_name != "N/A"
-                                #     and company_name != "Not found"
-                                # ):
-                                #     # try:
-                                #     print(
-                                #         f"full name is {full_name} and company name is {company_name}"
-                                #     )
-                                #     serp_data = get_founder_email(
-                                #         company_name,
-                                #         full_name,
-                                #     )
-                                #     print(
-                                #         f"response of serp api is ------------>>>>>>>>{serp_data}"
-                                #     )
-                                #     if serp_data and serp_data.get("email"):
-                                #         email_addresses = serp_data.get("email")
-                                # except requests.exceptions.RequestException:
-                                #     # Silently fail and keep test@company.com
-                                #     pass
-
-                                emails = contact.get("emails", [])
-                                processed_emails = []
-                                for e in emails:
-                                    address = e.get("address")
-                                    if address and address.startswith("..."):
-                                        processed_emails.append("test@company.com")
-                                    elif address:
-                                        processed_emails.append(address)
-                                if not processed_emails:
-                                    email_addresses = "test@company.com"
-                                else:
-                                    email_addresses = ", ".join(processed_emails)
-
-                                industry = details.get("industry", {}).get(
-                                    "primary_industry",
-                                    {},
-                                )
-
-                                processed_data.append(
-                                    {
-                                        "Company": details.get(
-                                            "name",
-                                            "Not found",
-                                        ),
-                                        "Website": details.get("homepage_url", ""),
-                                        "Industry": industry.get("key", ""),
-                                        "Sub-Industry": industry.get(
-                                            "sub_industry",
-                                            {},
-                                        ).get("key", ""),
-                                        "Name (Founder/CTO)": f"{full_name} ({title})",
-                                        "Founder LinkedIn": contact.get(
-                                            "social_link",
-                                            "",
-                                        ),
-                                        "Company LinkedIn": details.get(
-                                            "social",
-                                            {},
-                                        ).get("linkedin", ""),
-                                        "Phone": phone_numbers,
-                                        "Email": email_addresses,
-                                        "Location": location,
-                                    },
-                                )
-                        st.session_state.data = processed_data
-                else:
-                    st.error("No results found or an error occurred.")
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-    else:
-        st.warning("Please enter a search query.")
 
 if st.session_state.data:
-    processed_data = st.session_state.data
     st.success(
-        f"Found {len(processed_data)} matching contacts.",
+        f"Showing {len(st.session_state.data)} matching contacts on this page. Total found: {st.session_state.total_hits}"
     )
 
-    page_size = 100
-    start_index = st.session_state.page_number * page_size
-    end_index = start_index + page_size
-
-    df = pd.DataFrame(processed_data[start_index:end_index])
-    df.index = range(start_index + 1, start_index + len(df) + 1)
+    df = pd.DataFrame(st.session_state.data)
     st.dataframe(df)
 
     # Pagination controls
-    def go_to_previous_page():
-        st.session_state.page_number -= 1
-
-    def go_to_next_page():
-        st.session_state.page_number += 1
-
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
         st.button(
@@ -316,15 +266,17 @@ if st.session_state.data:
         st.button(
             "Next",
             on_click=go_to_next_page,
-            disabled=(end_index >= len(processed_data)),
+            disabled=(
+                (st.session_state.page_number + 1) * 25 >= st.session_state.total_hits
+            ),
         )
 
-    csv = pd.DataFrame(processed_data).to_csv(index=False).encode("utf-8")
+    csv = pd.DataFrame(st.session_state.data).to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Export to CSV",
         data=csv,
-        file_name=f"{query}_founders_ctos.csv",
+        file_name=f"{st.session_state.query}_founders_ctos_page_{st.session_state.page_number + 1}.csv",
         mime="text/csv",
     )
-elif search_button and query:
+elif search_button and st.session_state.query:
     st.info("No Founders or CTOs found for this company.")

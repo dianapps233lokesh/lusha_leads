@@ -2,6 +2,7 @@ import time
 import uuid
 
 import requests
+import streamlit as st
 
 from app.core import MAX_ROWS_PER_PAGE
 from app.core.config import settings
@@ -43,7 +44,7 @@ class LushaApiClient:
                 "excludePartialProfiles": False,
             },
             "display": "contacts",
-            "pages": {"page": page, "pageSize": 100},
+            "pages": {"page": page, "pageSize": 25},
             "sessionId": session_id,
             "searchTrigger": "NewFilter",
             "savedSearchId": 0,
@@ -59,12 +60,25 @@ class LushaApiClient:
         try:
             response = self.session.post(url, json=payload, headers=self.headers)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+
+            # Specifically check for the quota exceeded error from the API
+            if data.get("searchQuotaExceeded"):
+                print(f"Lusha API response: {data}")
+                error_message = "Your Lusha API request could not be completed. This may be due to exceeding the monthly search quota or other API limitations. Please check your Lusha account for more details."
+                st.warning(error_message)
+                return {"error": error_message}
+
+            # Check for other application-level errors
+            if "error" in data:
+                print(f"API Error: {data['error']}")
+                return data
+
+            return data
         except requests.exceptions.RequestException as e:
             print(f"An error occurred: {e}")
-            # In a real app, you'd want to handle this more gracefully
-            # For example, by raising a custom exception
-            return None
+            # Return a structured error for HTTP errors
+            return {"error": str(e)}
 
     def get_all_prospecting_data(self, search_text: str):
         all_contacts = []
