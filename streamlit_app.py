@@ -1,11 +1,26 @@
+import copy
+
 import pandas as pd
-import requests
 import streamlit as st
+from dotenv import load_dotenv
+
+from app.services.lusha_service import lusha_service
+from app.services.mongo_service import mongo_service
+from app.utils.helper import (
+    check_password,
+    csv_exporter,
+    parse_data,
+)
+from app.utils.logger import logging
+
+load_dotenv()
+
+if not check_password():
+    st.stop()  # Do not continue if check_password is not True.
 
 # Set page configuration for a modern look
 st.set_page_config(page_title="Lusha Search", layout="wide")
 
-# Custom CSS for a professional and attractive UI
 st.markdown(
     """
 <style>
@@ -65,176 +80,113 @@ st.markdown(
 
 # App header
 st.title("DianApps Lead Search")
-# st.markdown(
-#     "<h3 style='text-align: center; color: #E0E0E0;'>Enter a company name to find key contacts.</h3>",
-#     unsafe_allow_html=True,
-# )
 st.markdown("---")
 
-# Search input and button
+# --- Session State Initialization ---
+if "page_number" not in st.session_state:
+    st.session_state.page_number = 0
+if "data" not in st.session_state:
+    st.session_state.data = []
+if "query" not in st.session_state:
+    st.session_state.query = ""
+if "total_hits" not in st.session_state:
+    st.session_state.total_hits = 0
+
+
+# --- Data Fetching and Processing ---
+def fetch_and_process_data(query, page):
+    # print(f"--- Fetching data for query: '{query}', page: {page} ---")
+    with st.spinner("Searching..."):
+        try:
+            data = lusha_service.get_company_details(query, page)
+
+            if data and "error" in data:
+                logging.error(f"An API error occurred: {data['error']}")
+                st.error(f"An API error occurred: {data['error']}")
+                st.session_state.data = []
+                return
+            processed_data = parse_data(data)
+            logging.info(f"type of processed data is {type(processed_data)}")
+            st.session_state.data = copy.deepcopy(processed_data)
+            mongo_service.save_data(processed_data)
+            logging.info("data saved into the mongodb successfully.")
+
+        except Exception as e:
+            logging.error(f"An error occurred: {e}")
+            st.error(f"An error occurred: {e}")
+            st.session_state.data = []
+
+
+# --- Pagination and Display ---
+def go_to_previous_page():
+    logging.info("clicked the previous button")
+    if st.session_state.page_number > 0:
+        st.session_state.page_number -= 1
+        fetch_and_process_data(st.session_state.query, st.session_state.page_number)
+        logging.info("previous page data fetched successfully")
+
+
+def go_to_next_page():
+    logging.info("clicked the next button")
+    st.session_state.page_number += 1
+    fetch_and_process_data(st.session_state.query, st.session_state.page_number)
+    logging.info("next page data fetched successfully")
+
+
+# --- Search Form ---
 with st.form("search_form", clear_on_submit=False):
-    col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([10, 1])
     with col1:
-        query = st.text_input(
-            "",
-            placeholder="Enter company name...",
+        query_input = st.text_input(
+            "Search Query",
+            placeholder="Enter your query...",
             label_visibility="collapsed",
+            key="query_input",
         )
     with col2:
         search_button = st.form_submit_button("Search")
 
-if "page_number" not in st.session_state:
+if search_button and query_input:
+    st.session_state.query = query_input
     st.session_state.page_number = 0
+    fetch_and_process_data(st.session_state.query, st.session_state.page_number)
 
-if "data" not in st.session_state:
-    st.session_state.data = []
-
-if search_button:
-    st.session_state.page_number = 0  # Reset page number on new search
-    st.session_state.data = []  # Clear previous data
-    if query:
-        # Display a spinner while fetching data
-        with st.spinner("Searching..."):
-            try:
-                # Make a request to the FastAPI backend
-                response = requests.post(
-                    "http://127.0.0.1:8000/api/search-founders",
-                    json={"search_text": query},
-                    timeout=50,
-                )
-                response.raise_for_status()  # Raise an exception for bad status codes
-                data = response.json()
-                # print(f"data is ------------->>>>>>{data}")
-
-                if data:
-                    contacts_list = data.get("contacts", {}).get("results", [])
-                    company_details = data.get("contacts", {}).get(
-                        "unique_companies",
-                        {},
-                    )
-
-                    if not contacts_list:
-                        st.warning("No contacts found in the API response.")
-                    else:
-                        processed_data = []
-                        for contact in contacts_list:
-                            job_title_info = contact.get("job_title", {})
-                            title = job_title_info.get("title", "")
-                            # company_id = contact.get("company_id", None)
-
-                            # Filter for founders and CTOs by checking for keywords in the title
-                            if (
-                                "founder" in title.lower()
-                                or "cto" in title.lower()
-                                or "chief technology officer" in title.lower()
-                            ):
-                                full_name = contact.get("name", {}).get("full", "N/A")
-
-                                location_info = contact.get("location", {})
-                                location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(
-                                    ", ",
-                                )
-
-                                phones = contact.get("phones", [])
-                                processed_phones = []
-                                for p in phones:
-                                    number = p.get("number")
-                                    if number and number.endswith("..."):
-                                        processed_phones.append("0000000000")
-                                    elif number:
-                                        processed_phones.append(number)
-                                if not processed_phones:
-                                    phone_numbers = "0000000000"
-                                else:
-                                    phone_numbers = ", ".join(processed_phones)
-
-                                emails = contact.get("emails", [])
-                                processed_emails = []
-                                for e in emails:
-                                    address = e.get("address")
-                                    if address and address.startswith("..."):
-                                        processed_emails.append("test@company.com")
-                                    elif address:
-                                        processed_emails.append(address)
-                                if not processed_emails:
-                                    email_addresses = "test@company.com"
-                                else:
-                                    email_addresses = ", ".join(processed_emails)
-
-                                # Get company details from the lookup
-                                contact_company_id = contact.get("company_id")
-                                details = company_details.get(
-                                    str(contact_company_id),
-                                    {},
-                                )
-                                industry = details.get("industry", {}).get(
-                                    "primary_industry",
-                                    {},
-                                )
-
-                                processed_data.append(
-                                    {
-                                        "Company": details.get(
-                                            "name",
-                                            "Not found",
-                                        ),
-                                        "Website": details.get("homepage_url", ""),
-                                        "Industry": industry.get("key", ""),
-                                        "Sub-Industry": industry.get(
-                                            "sub_industry",
-                                            {},
-                                        ).get("key", ""),
-                                        "Name (Founder/CTO)": f"{full_name} ({title})",
-                                        "Founder LinkedIn": contact.get(
-                                            "social_link",
-                                            "",
-                                        ),
-                                        "Company LinkedIn": details.get(
-                                            "social",
-                                            {},
-                                        ).get("linkedin", ""),
-                                        "Phone": phone_numbers,
-                                        "Email": email_addresses,
-                                        "Location": location,
-                                    },
-                                )
-                        st.session_state.data = processed_data
-                else:
-                    st.error("No results found or an error occurred.")
-            except requests.exceptions.RequestException as e:
-                st.error(f"An error occurred while connecting to the API: {e}")
-    else:
-        st.warning("Please enter a search query.")
 
 if st.session_state.data:
-    processed_data = st.session_state.data
     st.success(
-        f"Found {len(processed_data)} matching contacts.",
+        f"Showing {len(st.session_state.data)} matching contacts on this page. Total found: {st.session_state.total_hits}"
     )
 
-    page_size = 100
-    start_index = st.session_state.page_number * page_size
-    end_index = start_index + page_size
-
-    df = pd.DataFrame(processed_data[start_index:end_index])
+    df = pd.DataFrame(st.session_state.data)
+    start_index = st.session_state.page_number * 25 + 1
+    df.index = range(start_index, start_index + len(df))
     st.dataframe(df)
 
     # Pagination controls
     col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
-        if st.button("Previous") and st.session_state.page_number > 0:
-            st.session_state.page_number -= 1
+        st.button(
+            "Previous",
+            on_click=go_to_previous_page,
+            disabled=(st.session_state.page_number == 0),
+        )
     with col3:
-        if st.button("Next") and end_index < len(processed_data):
-            st.session_state.page_number += 1
+        st.button(
+            "Next",
+            on_click=go_to_next_page,
+            disabled=(
+                (st.session_state.page_number + 1) * 25 >= st.session_state.total_hits
+            ),
+        )
 
-    csv = pd.DataFrame(processed_data).to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Export to CSV",
-        data=csv,
-        file_name=f"{query}_founders_ctos.csv",
+        data=csv_exporter(),
+        file_name=f"founders_page_{st.session_state.page_number + 1}.csv",
         mime="text/csv",
     )
-else:
-    if search_button and query:
-        st.info("No Founders or CTOs found for this company.")
+
+
+elif search_button and st.session_state.query:
+    logging.info("no data found for founders.")
+    st.info("No Founders or CTOs found for this company.")
