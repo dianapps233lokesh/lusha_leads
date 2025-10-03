@@ -11,7 +11,7 @@ def get_founder_email(company_name: str, founder_name: str):
         "q": f"email of {founder_name} {company_name}",
     }
 
-    response = requests.get("https://serpapi.com/search", params=params)
+    response = requests.get("https://serpapi.com/search", params=params, timeout=30)
     response.raise_for_status()
 
     data = response.json()

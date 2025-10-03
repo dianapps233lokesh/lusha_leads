@@ -1,11 +1,11 @@
-import time
 import uuid
 
 import requests
 import streamlit as st
 
-from app.core import MAX_ROWS_PER_PAGE
+from app.core import MAX_OUTPUT_PER_API_CALL
 from app.core.config import settings
+from app.utils.logger import logging
 
 
 class LushaApiClient:
@@ -44,7 +44,7 @@ class LushaApiClient:
                 "excludePartialProfiles": False,
             },
             "display": "contacts",
-            "pages": {"page": page, "pageSize": 25},
+            "pages": {"page": page, "pageSize": MAX_OUTPUT_PER_API_CALL},
             "sessionId": session_id,
             "searchTrigger": "NewFilter",
             "savedSearchId": 0,
@@ -59,56 +59,28 @@ class LushaApiClient:
 
         try:
             response = self.session.post(url, json=payload, headers=self.headers)
+            logging.info(f"response generated successfully. ----- {response}")
             response.raise_for_status()
             data = response.json()
 
             # Specifically check for the quota exceeded error from the API
             if data.get("searchQuotaExceeded"):
-                print(f"Lusha API response: {data}")
+                logging.warning(f"Lusha API response: {data}")
                 error_message = "Your Lusha API request could not be completed. This may be due to exceeding the monthly search quota or other API limitations. Please check your Lusha account for more details."
                 st.warning(error_message)
                 return {"error": error_message}
 
             # Check for other application-level errors
             if "error" in data:
-                print(f"API Error: {data['error']}")
+                logging.error(f"API Error: {data['error']}")
                 return data
 
-            return data
         except requests.exceptions.RequestException as e:
-            print(f"An error occurred: {e}")
+            logging.error(f"An error occurred while calling the : {e}")
             # Return a structured error for HTTP errors
             return {"error": str(e)}
-
-    def get_all_prospecting_data(self, search_text: str):
-        all_contacts = []
-        all_companies = {}
-        page = 0
-        while True:
-            data = self.get_prospecting_data(search_text, page)
-            if not data:
-                break
-
-            contacts_data = data.get("contacts", {})
-            results = contacts_data.get("results", [])
-            unique_companies = contacts_data.get("unique_companies", {})
-
-            if not results:
-                break
-
-            all_contacts.extend(results)
-            all_companies.update(unique_companies)
-
-            if len(results) < MAX_ROWS_PER_PAGE:
-                break
-
-            page += 1
-
-            time.sleep(1)
-
-        return {
-            "contacts": {"results": all_contacts, "unique_companies": all_companies},
-        }
+        else:
+            return data
 
 
 # You can create a single instance to be used across the application

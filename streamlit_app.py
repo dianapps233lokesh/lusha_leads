@@ -1,48 +1,19 @@
-import os
+import copy
 
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
 from app.services.lusha_service import lusha_service
+from app.services.mongo_service import mongo_service
+from app.utils.helper import (
+    check_password,
+    csv_exporter,
+    parse_data,
+)
+from app.utils.logger import logging
 
 load_dotenv()
-
-
-# --- Authentication ---
-def check_password():
-    """Returns `True` if the user had a correct password."""
-
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if (
-            st.session_state["username"] == "admin"
-            and st.session_state["password"] == "admin@123"
-        ):
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # don't store password
-            del st.session_state["username"]
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        # First run, show input for password.
-        st.text_input("Username", key="username")
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        return False
-    if not st.session_state["password_correct"]:
-        # Password not correct, show input + error.
-        st.text_input("Username", key="username")
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        st.error("😕 User not known or password incorrect")
-        return False
-    # Password correct.
-    return True
-
 
 if not check_password():
     st.stop()  # Do not continue if check_password is not True.
@@ -130,83 +101,36 @@ def fetch_and_process_data(query, page):
             data = lusha_service.get_company_details(query, page)
 
             if data and "error" in data:
+                logging.error(f"An API error occurred: {data['error']}")
                 st.error(f"An API error occurred: {data['error']}")
                 st.session_state.data = []
                 return
-
-            contacts_data = data.get("contacts", {})
-            contacts_list = contacts_data.get("results", [])
-            company_details = contacts_data.get("unique_companies", {})
-
-            total_hits = contacts_data.get("total", 0)
-            # print(f"--- API returned total_hits: {total_hits} ---")
-            st.session_state.total_hits = total_hits
-
-            if not contacts_list:
-                st.warning("No contacts found for the current page.")
-                st.session_state.data = []
-                return
-
-            processed_data = []
-            for contact in contacts_list:
-                job_title_info = contact.get("job_title", {})
-                title = job_title_info.get("title", "")
-
-                if (
-                    "founder" in title.lower()
-                    or "cto" in title.lower()
-                    or "chief technology officer" in title.lower()
-                ):
-                    full_name = contact.get("name", {}).get("full", "N/A")
-                    contact_company_id = contact.get("company_id")
-                    details = company_details.get(str(contact_company_id), {})
-                    company_name = details.get("name", "Not found")
-                    location_info = contact.get("location", {})
-                    location = f"{location_info.get('city', '')}, {location_info.get('country', '')}".strip(
-                        ", "
-                    )
-
-                    phones = [
-                        p.get("number", "0000000000")
-                        for p in contact.get("phones", [])
-                        if p.get("number")
-                    ]
-                    phone_numbers = ", ".join(phones) if phones else "0000000000"
-
-                    emails = [
-                        e.get("address", "test@company.com")
-                        for e in contact.get("emails", [])
-                        if e.get("address")
-                    ]
-                    email_addresses = (
-                        ", ".join(emails) if emails else "test@company.com"
-                    )
-
-                    industry = details.get("industry", {}).get("primary_industry", {})
-
-                    processed_data.append(
-                        {
-                            "Company": company_name,
-                            "Website": details.get("homepage_url", ""),
-                            "Industry": industry.get("key", ""),
-                            "Sub-Industry": industry.get("sub_industry", {}).get(
-                                "key", ""
-                            ),
-                            "Name (Founder/CTO)": f"{full_name} ({title})",
-                            "Founder LinkedIn": contact.get("social_link", ""),
-                            "Company LinkedIn": details.get("social", {}).get(
-                                "linkedin", ""
-                            ),
-                            "Phone": phone_numbers,
-                            "Email": email_addresses,
-                            "Location": location,
-                        }
-                    )
-            st.session_state.data = processed_data
+            processed_data = parse_data(data)
+            logging.info(f"type of processed data is {type(processed_data)}")
+            st.session_state.data = copy.deepcopy(processed_data)
+            mongo_service.save_data(processed_data)
+            logging.info("data saved into the mongodb successfully.")
 
         except Exception as e:
+            logging.error(f"An error occurred: {e}")
             st.error(f"An error occurred: {e}")
             st.session_state.data = []
+
+
+# --- Pagination and Display ---
+def go_to_previous_page():
+    logging.info("clicked the previous button")
+    if st.session_state.page_number > 0:
+        st.session_state.page_number -= 1
+        fetch_and_process_data(st.session_state.query, st.session_state.page_number)
+        logging.info("previous page data fetched successfully")
+
+
+def go_to_next_page():
+    logging.info("clicked the next button")
+    st.session_state.page_number += 1
+    fetch_and_process_data(st.session_state.query, st.session_state.page_number)
+    logging.info("next page data fetched successfully")
 
 
 # --- Search Form ---
@@ -214,7 +138,7 @@ with st.form("search_form", clear_on_submit=False):
     col1, col2 = st.columns([10, 1])
     with col1:
         query_input = st.text_input(
-            "",
+            "Search Query",
             placeholder="Enter your query...",
             label_visibility="collapsed",
             key="query_input",
@@ -226,24 +150,6 @@ if search_button and query_input:
     st.session_state.query = query_input
     st.session_state.page_number = 0
     fetch_and_process_data(st.session_state.query, st.session_state.page_number)
-
-
-# --- Pagination and Display ---
-def go_to_previous_page():
-    # print("--- In go_to_previous_page ---")
-    if st.session_state.page_number > 0:
-        st.session_state.page_number -= 1
-        # print(f"Page number decremented to: {st.session_state.page_number}")
-        fetch_and_process_data(st.session_state.query, st.session_state.page_number)
-    # print("--- Exiting go_to_previous_page ---")
-
-
-def go_to_next_page():
-    # print("--- In go_to_next_page ---")
-    st.session_state.page_number += 1
-    # print(f"Page number incremented to: {st.session_state.page_number}")
-    fetch_and_process_data(st.session_state.query, st.session_state.page_number)
-    # print("--- Exiting go_to_next_page ---")
 
 
 if st.session_state.data:
@@ -273,12 +179,14 @@ if st.session_state.data:
             ),
         )
 
-    csv = pd.DataFrame(st.session_state.data).to_csv(index=False).encode("utf-8")
     st.download_button(
         label="Export to CSV",
-        data=csv,
-        file_name=f"{st.session_state.query}_founders_ctos_page_{st.session_state.page_number + 1}.csv",
+        data=csv_exporter(),
+        file_name=f"founders_page_{st.session_state.page_number + 1}.csv",
         mime="text/csv",
     )
+
+
 elif search_button and st.session_state.query:
+    logging.info("no data found for founders.")
     st.info("No Founders or CTOs found for this company.")
